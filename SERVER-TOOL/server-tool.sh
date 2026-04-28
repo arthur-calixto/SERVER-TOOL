@@ -2,19 +2,20 @@
 # Script de ferramentas uteis
 ########################################################
 # Desenvolvido por Arthur Calixto
-# Ultima atualizacao: 25/02/2026
+# Ultima atualizacao: 28/04/2026
 # Objetivo: Automatizar tarefas
 ########################################################
 
 # Variaveis
 v_ip=$(ip addr show | grep "inet " | grep -v 127.0.0. | head -1 | cut -d" " -f6 | cut -d/ -f1)
 dir_stack="/repositorio/arthur/JSTACK"
+arquivo_parametros="/repositorio/arthur/parametros.txt"
 
 # Funcao de cabecalho
 function cabecalho() {
     clear
     echo " ###################################################################################################"
-    echo " ########             SERVER-TOOL AUTOMAÇÕES DE TAREFAS       $v_ip         v 2.1 ########"
+    echo " ########             SERVER-TOOL AUTOMAÇÕES DE TAREFAS       $v_ip         v 3.0 ########"
     echo " ###################################################################################################"
     echo " "
 }
@@ -292,11 +293,6 @@ function opcao_jstack() {
 
     (crontab -l 2>/dev/null | grep -v "$pasta_jstack/gerar_log.sh"; echo "$cron_entry") | crontab -
     echo "✔ Crontab configurado"
-    
-   # echo "Configurando crontab..."
-   # cron_entry="*/1 8-19 * * * $pasta_jstack/gerar_log.sh >/dev/null 2>&1"
-   # (crontab -l 2>/dev/null | grep -v "$pasta_jstack/gerar_log.sh"; echo "$cron_entry") | crontab -
-   # echo "✔ Crontab configurado"
 
     echo ""
     echo -e "\e[32m╔═══════════════════════════════════════════════════════════╗\e[0m"
@@ -586,6 +582,139 @@ function menu_flight_recorder() {
 }
 
 ###############################################################
+# Função para adicionar parâmetros/argumentos no Wildfly
+###############################################################
+function opcao_parametros_wildfly() {
+
+    cabecalho
+    echo "ADICIONAR PARÂMETROS/ARGUMENTOS WILDFLY"
+    echo "========================================"
+    echo ""
+
+    base="/home/$v_home_dest"
+    log_file="/tmp/wildfly_param_$(date +%Y%m%d_%H%M%S).log"
+
+    log() {
+        echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$log_file"
+    }
+
+    # Validação arquivo de parâmetros
+    if [[ ! -f "$arquivo_parametros" ]]; then
+        log "❌ Arquivo de parâmetros não encontrado: $arquivo_parametros"
+        read -p "Digite o caminho correto: " arquivo_parametros
+        [[ ! -f "$arquivo_parametros" ]] && log "❌ Arquivo inválido. Abortando." && return 1
+    fi
+
+    selecionar_wildfly "$base"
+    [[ -z "$wildfly_name" ]] && log "❌ Nenhum Wildfly selecionado" && return 1
+
+    standalone_conf="$wildfly_path/bin/standalone.conf"
+
+    if [[ ! -f "$standalone_conf" ]]; then
+        log "❌ standalone.conf não encontrado: $standalone_conf"
+        return 1
+    fi
+
+    log "📄 Arquivo de parâmetros: $arquivo_parametros"
+    log "📄 standalone.conf: $standalone_conf"
+
+    # Backup simples
+    backup_conf="${standalone_conf}.bak_$(date +%Y%m%d_%H%M%S)"
+    cp "$standalone_conf" "$backup_conf"
+    log "✔ Backup criado: $backup_conf"
+
+    echo ""
+    log "🔍 Iniciando verificação..."
+
+    qtd_ja_existem=0
+    qtd_adicionados=0
+    comentario_adicionado=false
+
+    while IFS= read -r parametro || [[ -n "$parametro" ]]; do
+
+        parametro=$(echo "$parametro" | tr -d '\r' | xargs)
+
+        # Ignorar vazio ou comentário
+        [[ -z "$parametro" || "$parametro" =~ ^# ]] && continue
+
+        # 🔎 Busca direta pelo parâmetro (sem regex problemática)
+        if grep -Fq -- "$parametro" "$standalone_conf"; then
+            log "✔ JÁ EXISTE: $parametro"
+            ((qtd_ja_existem++))
+        else
+            # Adiciona comentário apenas uma vez
+            if [[ "$comentario_adicionado" == false ]]; then
+                if ! grep -q "argumentos de performance" "$standalone_conf"; then
+                    echo "" >> "$standalone_conf"
+                    echo "# argumentos de performance" >> "$standalone_conf"
+                fi
+                comentario_adicionado=true
+            fi
+
+            echo "JAVA_OPTS=\"\$JAVA_OPTS $parametro\"" >> "$standalone_conf"
+
+            log "➕ ADICIONADO: $parametro"
+            ((qtd_adicionados++))
+        fi
+
+    done < "$arquivo_parametros"
+
+    echo ""
+    log "📊 Resultado final:"
+    log "  • Já existiam: $qtd_ja_existem"
+    log "  • Adicionados: $qtd_adicionados"
+
+    if [[ $qtd_adicionados -eq 0 ]]; then
+        log "ℹ Nenhuma alteração necessária"
+    fi
+
+    echo ""
+    echo -e "\e[32m╔═══════════════════════════════════════════════════════════╗\e[0m"
+    echo -e "\e[32m║        ✓ PROCESSO FINALIZADO COM SUCESSO!                ║\e[0m"
+    echo -e "\e[32m╚═══════════════════════════════════════════════════════════╝\e[0m"
+
+    echo ""
+    echo "Cliente:         $v_home_dest"
+    echo "Wildfly:         $wildfly_name"
+    echo "Arquivo alterado:$standalone_conf"
+    echo "Backup:          $backup_conf"
+    echo "Log:             $log_file"
+    echo ""
+
+    read -p "Pressione ENTER para continuar..."
+}
+  
+
+###############################################################
+# Menu Parâmetros Wildfly
+###############################################################
+function menu_parametros_wildfly() {
+    cabecalho
+    echo "PARÂMETROS/ARGUMENTOS WILDFLY"
+    echo "============================="
+    echo "1) Adicionar parâmetros"
+    echo "2) Voltar ao menu principal"
+    echo ""
+    read -p "Escolha uma opção: " opcao_pw
+
+    case $opcao_pw in
+        1)
+            userhome
+            opcao_parametros_wildfly
+            menu_parametros_wildfly
+            ;;
+        2)
+            menu_principal
+            ;;
+        *)
+            echo "❌ Opção inválida!"
+            sleep 2
+            menu_parametros_wildfly
+            ;;
+    esac
+}
+
+###############################################################
 # Menu principal
 ###############################################################
 function menu_principal() {
@@ -594,7 +723,8 @@ function menu_principal() {
     echo "=============="
     echo "1) Monitoramento JSTACK"
     echo "2) Monitoramento FLIGHT RECORDER"
-    echo "3) Sair"
+    echo "3) Parâmetros/Argumentos Wildfly"
+    echo "4) Sair"
     echo ""
     read -p "Escolha uma opção: " opcao
 
@@ -604,8 +734,11 @@ function menu_principal() {
             ;;
         2)
             menu_flight_recorder
-            ;;    
+            ;;
         3)
+            menu_parametros_wildfly
+            ;;
+        4)
             echo "Saindo..."
             exit 0
             ;;
