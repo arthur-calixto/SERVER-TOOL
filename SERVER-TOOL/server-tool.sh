@@ -14,7 +14,7 @@ dir_stack="/repositorio/arthur/JSTACK"
 function cabecalho() {
     clear
     echo " ###################################################################################################"
-    echo " ########             SERVER-TOOL AUTOMAÇÕES DE TAREFAS       $v_ip         v 2.0 ########"
+    echo " ########             SERVER-TOOL AUTOMAÇÕES DE TAREFAS       $v_ip         v 2.1 ########"
     echo " ###################################################################################################"
     echo " "
 }
@@ -267,9 +267,36 @@ function opcao_jstack() {
 
     echo ""
     echo "Configurando crontab..."
-    cron_entry="*/1 8-19 * * * $pasta_jstack/gerar_log.sh >/dev/null 2>&1"
+    echo ""
+    echo "Selecione o tipo de monitoramento:"
+    echo "1) Horário comercial (08h às 19h)"
+    echo "2) 24 horas"
+    echo ""
+    read -p "Escolha uma opção: " opcao_cron
+
+    case $opcao_cron in
+        1)
+        cron_entry="*/1 8-19 * * * $pasta_jstack/gerar_log.sh >/dev/null 2>&1"
+        descricao_cron="A cada minuto das 08h às 19h"
+        ;;
+        2)
+        cron_entry="*/1 * * * * $pasta_jstack/gerar_log.sh >/dev/null 2>&1"
+        descricao_cron="A cada minuto, 24 horas por dia"
+        ;;
+        *)
+        echo "⚠ Opção inválida, usando horário comercial como padrão"
+        cron_entry="*/1 8-19 * * * $pasta_jstack/gerar_log.sh >/dev/null 2>&1"
+        descricao_cron="A cada minuto das 08h às 19h"
+        ;;
+    esac
+
     (crontab -l 2>/dev/null | grep -v "$pasta_jstack/gerar_log.sh"; echo "$cron_entry") | crontab -
     echo "✔ Crontab configurado"
+    
+   # echo "Configurando crontab..."
+   # cron_entry="*/1 8-19 * * * $pasta_jstack/gerar_log.sh >/dev/null 2>&1"
+   # (crontab -l 2>/dev/null | grep -v "$pasta_jstack/gerar_log.sh"; echo "$cron_entry") | crontab -
+   # echo "✔ Crontab configurado"
 
     echo ""
     echo -e "\e[32m╔═══════════════════════════════════════════════════════════╗\e[0m"
@@ -280,7 +307,7 @@ function opcao_jstack() {
     echo "Wildfly:   $wildfly_name"
     echo "JAVA_HOME: $java_home_extraido"
     echo "Diretório: $pasta_jstack"
-    echo "Execução:  A cada minuto das 08h às 19h"
+    echo "Execução:  $descricao_cron"
     echo ""
     read -p "Pressione ENTER para continuar..."
 }
