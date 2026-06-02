@@ -10,12 +10,14 @@
 v_ip=$(ip addr show | grep "inet " | grep -v 127.0.0. | head -1 | cut -d" " -f6 | cut -d/ -f1)
 dir_stack="/repositorio/arthur/JSTACK"
 arquivo_parametros="/repositorio/arthur/parametros.txt"
+dir_driver_orl="/repositorio/arthur/DRIVER/ORCL/ojdbc.jar"
+dir_driver_sql="/repositorio/arthur/DRIVER/MSQL/sqljdbc.jar"
 
 # Funcao de cabecalho
 function cabecalho() {
     clear
     echo " ###################################################################################################"
-    echo " ########             SERVER-TOOL AUTOMAÇÕES DE TAREFAS       $v_ip         v 3.0 ########"
+    echo " ########             SERVER-TOOL AUTOMAÇÕES DE TAREFAS       $v_ip         v 3.1 ########"
     echo " ###################################################################################################"
     echo " "
 }
@@ -344,11 +346,11 @@ function selecionar_jstack_remover() {
     jstackDirs=($(ls -d "$base_path"/jstack_* 2>/dev/null))
     
     if [[ ${#jstackDirs[@]} -eq 0 ]]; then
-        return 1
+        return 1/app/Bitwarden/resources/app.asar/index.html
     fi
     
     PS3='Selecione o monitoramento a remover: '
-    select jstack_selected in "${jstackDirs[@]}" "CANCELAR"; do
+    select jstack_selected in "${jstackDirs[@]}" "CANCELA/app/Bitwarden/resources/app.asar/index.htmlR"; do
         if [[ "$jstack_selected" == "CANCELAR" ]]; then
             echo "Operação cancelada"
             return 1
@@ -644,9 +646,9 @@ function opcao_parametros_wildfly() {
         else
             # Adiciona comentário apenas uma vez
             if [[ "$comentario_adicionado" == false ]]; then
-                if ! grep -q "argumentos de performance" "$standalone_conf"; then
+                if ! grep -q "Argumentos de performance" "$standalone_conf"; then
                     echo "" >> "$standalone_conf"
-                    echo "# argumentos de performance" >> "$standalone_conf"
+                    echo "# Argumentos de performance" >> "$standalone_conf"
                 fi
                 comentario_adicionado=true
             fi
@@ -714,6 +716,195 @@ function menu_parametros_wildfly() {
     esac
 }
 
+
+
+###############################################################
+# Função para atualizar driver no Wildfly
+###############################################################
+function opcao_driver_wildfly() {
+
+    cabecalho
+    echo "ATUALIZAR DRIVER NO WILDFLY"
+    echo "==========================="
+    echo ""
+
+    base="/home/$v_home_dest"
+    log_file="/tmp/wildfly_driver_$(date +%Y%m%d_%H%M%S).log"
+
+    log() {
+        echo "$(date '+%Y-%m-%d %H:%M:%S') | $1" | tee -a "$log_file"
+    }
+
+    # Selecionar Wildfly
+    selecionar_wildfly "$base"
+    [[ -z "$wildfly_name" ]] && log "❌ Nenhum Wildfly selecionado" && return 1
+
+    echo ""
+    echo "Selecione o tipo de driver:"
+    echo "1) SQL Server (sqljdbc.jar)"
+    echo "2) Oracle (ojdbc.jar)"
+    echo ""
+    read -p "Escolha uma opção: " opcao_driver
+
+    case $opcao_driver in
+        1)
+            tipo_driver="SQL SERVER"
+            arquivo_driver="$dir_driver_sql"
+            nome_jar="sqljdbc.jar"
+            dir_destino="$wildfly_path/modules/custom/sqljdbc/main"
+            adicionar_argumento=true
+            ;;
+        2)
+            tipo_driver="ORACLE"
+            arquivo_driver="$dir_driver_orl"
+            nome_jar="ojdbc.jar"
+            dir_destino="$wildfly_path/modules/custom/ojdbc/main"
+            adicionar_argumento=false
+            ;;
+        *)
+            echo "❌ Opção inválida!"
+            read -p "Pressione ENTER para continuar..."
+            return 1
+            ;;
+    esac
+
+    cabecalho
+    echo "ATUALIZAR DRIVER NO WILDFLY"
+    echo "==========================="
+    echo ""
+    echo -e "\e[33m╔═══════════════════════════════════════════════════════════╗\e[0m"
+    echo -e "\e[33m║  ⚠  ATENÇÃO: O serviço do Wildfly deve estar PARADO!     ║\e[0m"
+    echo -e "\e[33m║     Certifique-se de que não há usuários conectados.      ║\e[0m"
+    echo -e "\e[33m╚═══════════════════════════════════════════════════════════╝\e[0m"
+    echo ""
+    read -p "O serviço está parado? Deseja continuar? (s/N): " confirmacao_parado
+
+    if [[ "$confirmacao_parado" != "s" && "$confirmacao_parado" != "S" ]]; then
+        echo "Operação cancelada."
+        read -p "Pressione ENTER para continuar..."
+        return 1
+    fi
+
+    echo ""
+
+    # Validar arquivo do driver
+    if [[ ! -f "$arquivo_driver" ]]; then
+        log "❌ Arquivo do driver não encontrado: $arquivo_driver"
+        read -p "Digite o caminho correto do arquivo $nome_jar: " arquivo_driver
+        if [[ ! -f "$arquivo_driver" ]]; then
+            log "❌ Arquivo inválido. Abortando."
+            read -p "Pressione ENTER para continuar..."
+            return 1
+        fi
+    fi
+
+    log "📦 Driver selecionado: $tipo_driver"
+    log "📄 Arquivo de origem:  $arquivo_driver"
+    log "📁 Diretório destino:  $dir_destino"
+
+    # Criar diretório de destino se não existir
+    if [[ ! -d "$dir_destino" ]]; then
+        log "📁 Diretório não encontrado, criando: $dir_destino"
+        mkdir -p "$dir_destino"
+        if [[ $? -ne 0 ]]; then
+            log "❌ Erro ao criar diretório: $dir_destino"
+            read -p "Pressione ENTER para continuar..."
+            return 1
+        fi
+        log "✔ Diretório criado com sucesso"
+    fi
+
+    # Backup do driver atual se existir
+    if [[ -f "$dir_destino/$nome_jar" ]]; then
+        backup_jar="$dir_destino/${nome_jar}.bak_$(date +%Y%m%d_%H%M%S)"
+        cp "$dir_destino/$nome_jar" "$backup_jar"
+        log "✔ Backup do driver atual criado: $backup_jar"
+    else
+        log "ℹ Nenhum driver anterior encontrado, nenhum backup necessário"
+    fi
+
+    # Copiar novo driver
+    cp "$arquivo_driver" "$dir_destino/$nome_jar"
+    if [[ $? -ne 0 ]]; then
+        log "❌ Erro ao copiar driver para $dir_destino"
+        read -p "Pressione ENTER para continuar..."
+        return 1
+    fi
+    log "✔ Driver copiado com sucesso: $dir_destino/$nome_jar"
+
+    # Adicionar argumento no standalone.conf (apenas SQL Server)
+    if [[ "$adicionar_argumento" == true ]]; then
+        echo ""
+        standalone_conf="$wildfly_path/bin/standalone.conf"
+        argumento="-Dhash.alternativo.registro.base=true"
+
+        if [[ ! -f "$standalone_conf" ]]; then
+            log "❌ standalone.conf não encontrado: $standalone_conf"
+            read -p "Pressione ENTER para continuar..."
+            return 1
+        fi
+
+        backup_conf="${standalone_conf}.bak_$(date +%Y%m%d_%H%M%S)"
+        cp "$standalone_conf" "$backup_conf"
+        log "✔ Backup do standalone.conf criado: $backup_conf"
+
+        if grep -Fq -- "$argumento" "$standalone_conf"; then
+            log "✔ Argumento já existe no standalone.conf: $argumento"
+        else
+            echo "" >> "$standalone_conf"
+            echo "# Argumento necessário para uso do driver 9.4 ou superior" >> "$standalone_conf"
+            echo "JAVA_OPTS=\"\$JAVA_OPTS $argumento\"" >> "$standalone_conf"
+            log "➕ Argumento adicionado ao standalone.conf: $argumento"
+        fi
+    fi
+
+    echo ""
+    echo -e "\e[32m╔═══════════════════════════════════════════════════════════╗\e[0m"
+    echo -e "\e[32m║        ✓ DRIVER ATUALIZADO COM SUCESSO!                  ║\e[0m"
+    echo -e "\e[32m╚═══════════════════════════════════════════════════════════╝\e[0m"
+    echo ""
+    echo "Cliente:          $v_home_dest"
+    echo "Wildfly:          $wildfly_name"
+    echo "Tipo de driver:   $tipo_driver"
+    echo "Driver instalado: $dir_destino/$nome_jar"
+    if [[ "$adicionar_argumento" == true ]]; then
+        echo "standalone.conf:  $standalone_conf"
+    fi
+    echo "Log:              $log_file"
+    echo ""
+    read -p "Pressione ENTER para continuar..."
+}
+
+
+###############################################################
+# Menu Driver Wildfly
+###############################################################
+function menu_driver_wildfly() {
+    cabecalho
+    echo "ATUALIZAR DRIVER WILDFLY"
+    echo "============================="
+    echo "1) Atualizar Driver"
+    echo "2) Voltar ao menu principal"
+    echo ""
+    read -p "Escolha uma opção: " opcao_pw
+
+    case $opcao_pw in
+        1)
+            userhome
+            opcao_driver_wildfly
+            menu_driver_wildfly
+            ;;
+        2)
+            menu_principal
+            ;;
+        *)
+            echo "❌ Opção inválida!"
+            sleep 2
+            menu_driver_wildfly
+            ;;
+    esac
+}
+
 ###############################################################
 # Menu principal
 ###############################################################
@@ -724,7 +915,8 @@ function menu_principal() {
     echo "1) Monitoramento JSTACK"
     echo "2) Monitoramento FLIGHT RECORDER"
     echo "3) Parâmetros/Argumentos Wildfly"
-    echo "4) Sair"
+    echo "4) Atualizar DRIVER"
+    echo "5) Sair"
     echo ""
     read -p "Escolha uma opção: " opcao
 
@@ -739,6 +931,10 @@ function menu_principal() {
             menu_parametros_wildfly
             ;;
         4)
+            menu_driver_wildfly
+            ;;Vi
+
+        5)
             echo "Saindo..."
             exit 0
             ;;
